@@ -2504,9 +2504,13 @@ def test_in_one_fan_out_state_graph_waiting_edge(
     ]
 
 
+@pytest.mark.parametrize("use_waiting_edge", (True, False))
 @pytest.mark.parametrize("checkpointer_name", ALL_CHECKPOINTERS_SYNC)
 def test_in_one_fan_out_state_graph_barrier_node(
-    snapshot: SnapshotAssertion, request: pytest.FixtureRequest, checkpointer_name: str
+    snapshot: SnapshotAssertion,
+    request: pytest.FixtureRequest,
+    checkpointer_name: str,
+    use_waiting_edge: bool,
 ) -> None:
     checkpointer: BaseCheckpointSaver = request.getfixturevalue(
         f"checkpointer_{checkpointer_name}"
@@ -2554,14 +2558,15 @@ def test_in_one_fan_out_state_graph_barrier_node(
     workflow.add_edge("rewrite_query", "retriever_one")
     workflow.add_edge("retriever_one", "analyzer_one")
     workflow.add_edge("rewrite_query", "retriever_two")
-    # workflow.add_edge("retriever_one", "qa")
-    # workflow.add_edge("retriever_two", "qa")
-    workflow.add_edge(["retriever_one", "retriever_two"], "qa")
+    if use_waiting_edge:
+        workflow.add_edge(["retriever_one", "retriever_two"], "qa")
+    else:
+        workflow.add_edge("retriever_one", "qa")
+        workflow.add_edge("retriever_two", "qa")
     workflow.set_finish_point("qa")
 
     app = workflow.compile()
 
-    print(app.get_graph().draw_mermaid(with_styles=False))
     assert app.get_graph().draw_mermaid(with_styles=False) == snapshot
 
     assert app.invoke({"query": "what is weather in sf"}) == {
@@ -2685,7 +2690,9 @@ def test_in_one_fan_out_state_graph_barrier_node(
                     "query": "analyzed: query: what is weather in sf",
                     "docs": ["doc1", "doc2", "doc3", "doc4"],
                 },
-                "triggers": ("branch:to:qa",),
+                "triggers": ("branch:to:qa", "join:retriever_one+retriever_two:qa")
+                if use_waiting_edge
+                else ("branch:to:qa",),
             },
         },
         {
@@ -2732,9 +2739,9 @@ def test_in_one_fan_out_state_graph_barrier_node(
         c for c in app_w_interrupt.stream({"query": "what is weather in sf"}, config)
     ] == [
         {"rewrite_query": {"query": "query: what is weather in sf"}},
-        {"analyzer_one": {"query": "analyzed: query: what is weather in sf"}},
-        {"retriever_two": {"docs": ["doc3", "doc4"]}},
         {"retriever_one": {"docs": ["doc1", "doc2"]}},
+        {"retriever_two": {"docs": ["doc3", "doc4"]}},
+        {"analyzer_one": {"query": "analyzed: query: what is weather in sf"}},
         {"__interrupt__": ()},
     ]
 
@@ -2763,7 +2770,7 @@ def test_in_one_fan_out_state_graph_barrier_node(
             "parents": {},
             "source": "update",
             "step": 4,
-            "writes": {"retriever_one": {"docs": ["doc5"]}},
+            "writes": {"analyzer_one": {"docs": ["doc5"]}},
             "thread_id": "2",
         },
         parent_config=expected_parent_config,
@@ -3405,10 +3412,6 @@ def test_nested_pydantic_models(version: str) -> None:
         value: int
         name: str
 
-    # For constrained types
-    PositiveInt = Annotated[int, Field(gt=0)]
-    NonNegativeFloat = Annotated[float, Field(ge=0)]
-
     # Enum type
     class UserRole(Enum):
         ADMIN = "admin"
@@ -3480,8 +3483,8 @@ def test_nested_pydantic_models(version: str) -> None:
         file_size: ByteSize
 
         # Constrained types
-        positive_value: PositiveInt
-        non_negative: NonNegativeFloat
+        positive_value: Annotated[int, Field(gt=0)]
+        non_negative: Annotated[float, Field(ge=0)]
         limited_string: constr(min_length=3, max_length=10)
         bounded_int: conint(ge=10, le=100)
         restricted_float: confloat(gt=0, lt=1)
