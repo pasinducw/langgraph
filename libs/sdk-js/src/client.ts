@@ -928,13 +928,13 @@ export class RunsClient<
     threadId: null,
     assistantId: string,
     payload?: Omit<RunsWaitPayload, "multitaskStrategy" | "onCompletion">,
-  ): Promise<ThreadState["values"]>;
+  ): Promise<ThreadState<TStateType>["values"]>;
 
   async wait(
     threadId: string,
     assistantId: string,
     payload?: RunsWaitPayload,
-  ): Promise<ThreadState["values"]>;
+  ): Promise<ThreadState<TStateType>["values"]>;
 
   /**
    * Create a run and wait for it to complete.
@@ -948,7 +948,7 @@ export class RunsClient<
     threadId: string | null,
     assistantId: string,
     payload?: RunsWaitPayload,
-  ): Promise<ThreadState["values"]> {
+  ): Promise<ThreadState<TStateType>["values"]> {
     const json: Record<string, any> = {
       input: payload?.input,
       command: payload?.command,
@@ -968,7 +968,7 @@ export class RunsClient<
     };
     const endpoint =
       threadId == null ? `/runs/wait` : `/threads/${threadId}/runs/wait`;
-    const response = await this.fetch<ThreadState["values"]>(endpoint, {
+    const response = await this.fetch<ThreadState<TStateType>["values"]>(endpoint, {
       method: "POST",
       json,
       timeoutMs: null,
